@@ -1,8 +1,25 @@
-// app/api/products/route.ts — GET all + POST new product
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '../../../lib/db';
 
-// GET /api/products?status=approved&sellerId=xxx&category=Electronics
+export const runtime = 'nodejs';
+
+function toProduct(r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    sellerId: r.seller_id,
+    sellerName: r.seller_name,
+    name: r.name,
+    description: r.description,
+    price: r.price,
+    category: r.category,
+    stock: r.stock,
+    images: r.image_url ? [r.image_url] : [],
+    status: r.status,
+    rejectionReason: r.rejection_reason ?? null,
+    createdAt: r.created_at,
+  };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -10,8 +27,8 @@ export async function GET(req: NextRequest) {
     const sellerId = searchParams.get('sellerId');
     const category = searchParams.get('category');
 
-    // Build dynamic query with filters
-    let rows;
+    let rows: Record<string, unknown>[];
+
     if (status && sellerId) {
       rows = await sql`SELECT * FROM products WHERE status = ${status} AND seller_id = ${sellerId} ORDER BY created_at DESC`;
     } else if (status && category) {
@@ -26,29 +43,13 @@ export async function GET(req: NextRequest) {
       rows = await sql`SELECT * FROM products ORDER BY created_at DESC`;
     }
 
-    const products = rows.map(r => ({
-      id: r.id,
-      sellerId: r.seller_id,
-      sellerName: r.seller_name,
-      name: r.name,
-      description: r.description,
-      price: r.price,
-      category: r.category,
-      stock: r.stock,
-      images: r.image_url ? [r.image_url] : [],
-      status: r.status,
-      rejectionReason: r.rejection_reason,
-      createdAt: r.created_at,
-    }));
-
-    return NextResponse.json(products);
+    return NextResponse.json(rows.map(toProduct));
   } catch (err) {
     console.error('GET /api/products error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-// POST /api/products — create new product (seller)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const imageUrl = images?.[0] || null;
+    const imageUrl = images?.[0] ?? null;
 
     const rows = await sql`
       INSERT INTO products (seller_id, seller_name, name, description, price, category, stock, image_url, status)
@@ -66,14 +67,7 @@ export async function POST(req: NextRequest) {
       RETURNING *
     `;
 
-    const r = rows[0];
-    return NextResponse.json({
-      id: r.id, sellerId: r.seller_id, sellerName: r.seller_name,
-      name: r.name, description: r.description, price: r.price,
-      category: r.category, stock: r.stock,
-      images: r.image_url ? [r.image_url] : [],
-      status: r.status, createdAt: r.created_at,
-    }, { status: 201 });
+    return NextResponse.json(toProduct(rows[0]), { status: 201 });
   } catch (err) {
     console.error('POST /api/products error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

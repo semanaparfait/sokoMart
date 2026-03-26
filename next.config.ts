@@ -9,8 +9,8 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Neon serverless driver needs this on Vercel edge/serverless
-  serverExternalPackages: ['bcryptjs'],
+  // Force these native/serverless packages to stay in Node.js runtime
+  serverExternalPackages: ['bcryptjs', '@neondatabase/serverless', 'pg'],
 };
 
 export default nextConfig;

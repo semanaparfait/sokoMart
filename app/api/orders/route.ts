@@ -1,27 +1,34 @@
-// app/api/orders/route.ts — GET all + POST new order
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '../../../lib/db';
 
-// Helper: fetch orders with their items
-async function fetchOrders(whereClause?: string, value?: string) {
-  let orderRows;
-  if (whereClause === 'buyer' && value) {
-    orderRows = await sql`SELECT * FROM orders WHERE buyer_id = ${value} ORDER BY created_at DESC`;
-  } else {
-    orderRows = await sql`SELECT * FROM orders ORDER BY created_at DESC`;
-  }
+export const runtime = 'nodejs';
 
-  if (orderRows.length === 0) return [];
+async function fetchOrders(buyerId?: string) {
+  const orderRows = buyerId
+    ? await sql`SELECT * FROM orders WHERE buyer_id = ${buyerId} ORDER BY created_at DESC`
+    : await sql`SELECT * FROM orders ORDER BY created_at DESC`;
 
-  const orderIds = orderRows.map(o => o.id);
+  if (!orderRows || orderRows.length === 0) return [];
 
-  // Fetch all items for these orders in one query
+  const orderIds = orderRows.map(o => o.id as string);
+
   const itemRows = await sql`
-    SELECT oi.*, p.seller_id, p.seller_name, p.name AS product_name,
-           p.description, p.category, p.stock, p.image_url, p.status AS product_status
+    SELECT
+      oi.order_id,
+      oi.quantity,
+      oi.price_at_purchase,
+      p.id          AS product_id,
+      p.seller_id,
+      p.seller_name,
+      p.name        AS product_name,
+      p.description,
+      p.category,
+      p.stock,
+      p.image_url,
+      p.status      AS product_status
     FROM order_items oi
     JOIN products p ON p.id = oi.product_id
-    WHERE oi.order_id = ANY(${orderIds})
+    WHERE oi.order_id = ANY(${orderIds}::uuid[])
   `;
 
   return orderRows.map(o => ({
@@ -33,7 +40,7 @@ async function fetchOrders(whereClause?: string, value?: string) {
     status: o.status,
     address: o.address,
     createdAt: o.created_at,
-    items: itemRows
+    items: (itemRows || [])
       .filter(i => i.order_id === o.id)
       .map(i => ({
         quantity: i.quantity,
@@ -54,23 +61,18 @@ async function fetchOrders(whereClause?: string, value?: string) {
   }));
 }
 
-// GET /api/orders?buyerId=xxx or ?sellerId=xxx
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const buyerId  = searchParams.get('buyerId');
-    const sellerId = searchParams.get('sellerId');
+    const buyerId  = searchParams.get('buyerId')  ?? undefined;
+    const sellerId = searchParams.get('sellerId') ?? undefined;
 
-    let orders;
-    if (buyerId) {
-      orders = await fetchOrders('buyer', buyerId);
-    } else {
-      orders = await fetchOrders();
-    }
+    let orders = await fetchOrders(buyerId);
 
-    // Filter by sellerId on the JS side (orders containing that seller's products)
     if (sellerId) {
-      orders = orders.filter(o => o.items.some(i => i.product.sellerId === sellerId));
+      orders = orders.filter(o =>
+        o.items.some(i => i.product.sellerId === sellerId)
+      );
     }
 
     return NextResponse.json(orders);
@@ -80,17 +82,14 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/orders — create order + order_items
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { buyerId, buyerName, buyerEmail, items, total, address } = body;
+    const { buyerId, buyerName, buyerEmail, items, total, address } = await req.json();
 
     if (!buyerName || !buyerEmail || !items?.length || !total || !address) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Insert order
     const orderRows = await sql`
       INSERT INTO orders (buyer_id, buyer_name, buyer_email, total, address, status)
       VALUES (${buyerId ?? null}, ${buyerName}, ${buyerEmail}, ${total}, ${address}, 'pending')
@@ -98,28 +97,31 @@ export async function POST(req: NextRequest) {
     `;
     const order = orderRows[0];
 
-    // Insert order items
     for (const item of items) {
       await sql`
         INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase)
         VALUES (${order.id}, ${item.product.id}, ${item.quantity}, ${item.product.price})
       `;
-      // Decrement stock
-      await sql`UPDATE products SET stock = stock - ${item.quantity} WHERE id = ${item.product.id} AND stock >= ${item.quantity}`;
+      await sql`
+        UPDATE products
+        SET stock = stock - ${item.quantity}
+        WHERE id = ${item.product.id} AND stock >= ${item.quantity}
+      `;
     }
 
-    const [full] = await fetchOrders('buyer', order.buyer_id) ?? [];
+    const allOrders = await fetchOrders(buyerId ?? undefined);
+    const created   = allOrders.find(o => o.id === order.id);
 
     return NextResponse.json({
-      id: order.id,
-      buyerId: order.buyer_id,
-      buyerName: order.buyer_name,
+      id:         order.id,
+      buyerId:    order.buyer_id,
+      buyerName:  order.buyer_name,
       buyerEmail: order.buyer_email,
-      total: order.total,
-      status: order.status,
-      address: order.address,
-      createdAt: order.created_at,
-      items: full?.items ?? [],
+      total:      order.total,
+      status:     order.status,
+      address:    order.address,
+      createdAt:  order.created_at,
+      items:      created?.items ?? [],
     }, { status: 201 });
   } catch (err) {
     console.error('POST /api/orders error:', err);

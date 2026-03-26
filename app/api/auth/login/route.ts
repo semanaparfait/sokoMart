@@ -1,7 +1,8 @@
-// app/api/auth/login/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '../../../../lib/db';
 import bcrypt from 'bcryptjs';
+
+export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,7 +17,7 @@ export async function POST(req: NextRequest) {
       FROM users WHERE email = ${email.toLowerCase().trim()}
     `;
 
-    if (rows.length === 0) {
+    if (!rows || rows.length === 0) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 

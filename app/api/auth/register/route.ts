@@ -1,7 +1,8 @@
-// app/api/auth/register/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '../../../../lib/db';
 import bcrypt from 'bcryptjs';
+
+export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,9 +18,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 });
     }
 
-    // Check existing email
     const existing = await sql`SELECT id FROM users WHERE email = ${email.toLowerCase().trim()}`;
-    if (existing.length > 0) {
+    if (existing && existing.length > 0) {
       return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
     }
 
