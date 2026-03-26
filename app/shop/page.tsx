@@ -1,17 +1,16 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Search, SlidersHorizontal, X } from 'lucide-react';
 import { useGetProductsQuery } from '../../lib/features/apiSlice';
 import ProductCard from '../../components/ProductCard';
 import { CATEGORIES } from '../../lib/mockData';
 
-export default function ShopPage() {
+function ShopContent() {
   const searchParams = useSearchParams();
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState(searchParams.get('category') || '');
   const [sort, setSort] = useState('newest');
-  const [showFilters, setShowFilters] = useState(false);
 
   const { data: products = [], isLoading } = useGetProductsQuery({ status: 'approved' });
 
@@ -22,13 +21,14 @@ export default function ShopPage() {
 
   const filtered = products
     .filter(p => {
-      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
+      const matchSearch =
+        p.name.toLowerCase().includes(search.toLowerCase()) ||
         p.description.toLowerCase().includes(search.toLowerCase());
       const matchCat = !selectedCat || p.category === selectedCat;
       return matchSearch && matchCat;
     })
     .sort((a, b) => {
-      if (sort === 'price-asc') return a.price - b.price;
+      if (sort === 'price-asc')  return a.price - b.price;
       if (sort === 'price-desc') return b.price - a.price;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
@@ -43,7 +43,7 @@ export default function ShopPage() {
         <p className="text-gray-500 mt-1">{filtered.length} products found</p>
       </div>
 
-      {/* Search + Filter Bar */}
+      {/* Search + Sort bar */}
       <div className="flex flex-wrap gap-3 mb-6">
         <div className="relative flex-1 min-w-64">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -64,12 +64,8 @@ export default function ShopPage() {
           <option value="price-asc">Price: Low to High</option>
           <option value="price-desc">Price: High to Low</option>
         </select>
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          className="flex items-center gap-2 px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm hover:bg-gray-50 transition-colors"
-        >
-          <SlidersHorizontal className="w-4 h-4" />
-          Filters
+        <button className="flex items-center gap-2 px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm hover:bg-gray-50 transition-colors">
+          <SlidersHorizontal className="w-4 h-4" /> Filters
         </button>
       </div>
 
@@ -77,7 +73,9 @@ export default function ShopPage() {
       <div className="flex flex-wrap gap-2 mb-8">
         <button
           onClick={() => setSelectedCat('')}
-          className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${!selectedCat ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
+          className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+            !selectedCat ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+          }`}
         >
           All
         </button>
@@ -85,7 +83,9 @@ export default function ShopPage() {
           <button
             key={cat}
             onClick={() => setSelectedCat(cat === selectedCat ? '' : cat)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${selectedCat === cat ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+              selectedCat === cat ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+            }`}
           >
             {cat}
           </button>
@@ -129,7 +129,10 @@ export default function ShopPage() {
           <p className="text-6xl mb-4">🔍</p>
           <h3 className="text-xl font-semibold text-gray-700 mb-2">No products found</h3>
           <p className="text-gray-400">Try adjusting your filters or search term</p>
-          <button onClick={() => { setSearch(''); setSelectedCat(''); }} className="mt-4 text-emerald-600 font-medium hover:underline">
+          <button
+            onClick={() => { setSearch(''); setSelectedCat(''); }}
+            className="mt-4 text-emerald-600 font-medium hover:underline"
+          >
             Clear all filters
           </button>
         </div>
@@ -139,5 +142,19 @@ export default function ShopPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ShopPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <span className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <ShopContent />
+    </Suspense>
   );
 }
