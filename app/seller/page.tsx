@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
@@ -27,14 +27,8 @@ const STATUS_ICONS: Record<ProductStatus, React.ReactNode> = {
   rejected: <XCircle className="w-3.5 h-3.5" />,
 };
 
-const SAMPLE_IMAGES = [
-  'https://images.unsplash.com/photo-1572635196237-14b3f281503f?w=400&q=80',
-  'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=400&q=80',
-  'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400&q=80',
-  'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=80',
-  'https://images.unsplash.com/photo-1556228578-8c89e6adf883?w=400&q=80',
-  'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&q=80',
-];
+const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
+const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 export default function SellerDashboard() {
   const router = useRouter();
@@ -42,6 +36,7 @@ export default function SellerDashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'orders' | 'add'>('overview');
   const [showModal, setShowModal] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const { data: products = [], isLoading: loadingProducts } = useGetProductsQuery({ sellerId: currentUser?.id });
   const { data: orders = [] } = useGetOrdersQuery({ sellerId: currentUser?.id });
@@ -50,7 +45,7 @@ export default function SellerDashboard() {
 
   const [form, setForm] = useState({
     name: '', description: '', price: '', category: CATEGORIES[0],
-    stock: '', imageUrl: SAMPLE_IMAGES[0],
+    stock: '', imageUrl: '', imageName: '',
   });
 
   // Guard
@@ -79,6 +74,10 @@ export default function SellerDashboard() {
       toast.error('Please fill in all required fields');
       return;
     }
+    if (!form.imageUrl) {
+      toast.error('Please upload a product image');
+      return;
+    }
     try {
       await addProduct({
         sellerId: currentUser.id,
@@ -91,11 +90,42 @@ export default function SellerDashboard() {
         images: [form.imageUrl],
       }).unwrap();
       toast.success('Product submitted for review!');
-      setForm({ name: '', description: '', price: '', category: CATEGORIES[0], stock: '', imageUrl: SAMPLE_IMAGES[0] });
+      setForm({ name: '', description: '', price: '', category: CATEGORIES[0], stock: '', imageUrl: '', imageName: '' });
+      if (imageInputRef.current) imageInputRef.current.value = '';
       setActiveTab('products');
     } catch {
       toast.error('Failed to add product');
     }
+  };
+
+  const handleImagePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!SUPPORTED_IMAGE_TYPES.includes(file.type)) {
+      toast.error('Use JPG, PNG, or WEBP image files');
+      e.target.value = '';
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      toast.error('Image must be 2MB or smaller');
+      e.target.value = '';
+      return;
+    }
+
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error('Failed to read selected file'));
+      reader.readAsDataURL(file);
+    }).catch(() => {
+      toast.error('Could not read selected image');
+      return '';
+    });
+
+    if (!dataUrl) return;
+    setForm(prev => ({ ...prev, imageUrl: dataUrl, imageName: file.name }));
   };
 
   const handleDelete = async (id: string) => {
@@ -294,17 +324,41 @@ export default function SellerDashboard() {
                     {!form.imageUrl && (
                       <div className="flex flex-col items-center justify-center h-full text-gray-300">
                         <Upload className="w-8 h-8 mb-2" />
-                        <p className="text-sm">Select a sample image below</p>
+                        <p className="text-sm">Upload your own product image</p>
                       </div>
                     )}
                   </div>
-                  <div className="grid grid-cols-6 gap-2">
-                    {SAMPLE_IMAGES.map(img => (
-                      <button key={img} type="button" onClick={() => setForm({ ...form, imageUrl: img })}
-                        className={`relative h-12 rounded-xl overflow-hidden border-2 transition-all ${form.imageUrl === img ? 'border-emerald-500 scale-105' : 'border-transparent hover:border-gray-300'}`}>
-                        <Image src={img} alt="" fill className="object-cover" />
-                      </button>
-                    ))}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={handleImagePick}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Choose Image
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm(prev => ({ ...prev, imageUrl: '', imageName: '' }));
+                        if (imageInputRef.current) imageInputRef.current.value = '';
+                      }}
+                      disabled={!form.imageUrl}
+                      className="inline-flex items-center text-sm font-medium text-gray-500 hover:text-red-500 disabled:text-gray-300"
+                    >
+                      Remove
+                    </button>
+                    <p className="text-xs text-gray-400 w-full">
+                      JPG, PNG, or WEBP. Max size 2MB.
+                      {form.imageName ? ` Selected: ${form.imageName}` : ''}
+                    </p>
                   </div>
                 </div>
 
